@@ -8,19 +8,32 @@
 
 (define-unsigned maclen 6)
 
-(define-binary-class arp-packet ()
+(define-binary-class ethernet-header ()
   ((mac-dst :binary-type maclen)
    (mac-src :binary-type maclen)
-   (type :binary-type u16)
-   (htype :binary-type u16)
-   (ptype :binary-type u16)
-   (hlen :binary-type u8)
-   (plen :binary-type u8)
-   (opcode :binary-type u16)
-   (arp-sender-mac :binary-type maclen)
-   (sender-ip :binary-type u32)
-   (arp-target-mac :binary-type maclen)
-   (target-ip :binary-type u32)))
+   (type :binary-type u16)))
+
+(define-binary-class arp-header ()
+   ((htype :binary-type u16)
+    (ptype :binary-type u16)
+    (hlen :binary-type u8)
+    (plen :binary-type u8)
+    (opcode :binary-type u16)
+    (mac-src :binary-type maclen)
+    (ip-src :binary-type u32)
+    (mac-dst :binary-type maclen)
+    (ip-dst :binary-type u32)))
+
+(defclass capture-metadata ()
+  ((sec :initarg :sec)
+   (usec :initarg :usec)
+   (caplen :initarg :caplen)
+   (len :initarg :len)))
+
+(defclass arp-capture ()
+  ((ethernet-header :initarg :ethernet-header)
+   (arp-header :initarg :arp-header)
+   (capture-metadata :initarg :capture-metadata)))
 
 (defclass host ()
   ((mac :accessor host-mac
@@ -30,8 +43,7 @@
    (last-activity :accessor host-last-activity
                   :initarg :last-activity)))
 
-(defparameter *host-table* (make-hash-table))
-(defun update-entry-table (table mac &key (ip nil))
+(defun update-host-table (table mac &key (ip nil))
   (setf (gethash mac table)
         (make-instance 'host
                        :mac mac
@@ -50,14 +62,16 @@
                       for x = ip then (truncate x 256)
                       collect (nth-value 1 (truncate x 256))))))
 
+(defparameter *host-table* (make-hash-table))
+
 (defun print-arp (datagram)
-  (with-slots (mac-src mac-dst opcode sender-ip target-ip) datagram
+  (with-slots (mac-src mac-dst opcode ip-src ip-dst) datagram
     (format t
             "~A (~A) → ~A (~A) (~[?~;request~;response~])~%"
             (format-mac mac-src)
-            (format-ip sender-ip)
+            (format-ip ip-src)
             (format-mac mac-dst)
-            (format-ip target-ip)
+            (format-ip ip-dst)
             opcode)))
 
 (defun sniff (iface handler)
@@ -65,23 +79,31 @@
     (set-filter pcap "arp")
     (loop (capture pcap -1 handler))))
 
+(defun parse-frame (sec usec caplen len buffer)
+  (with-input-from-sequence (buffer-stream buffer)
+    (let ((binary-types:*endian* :big-endian))
+      (make-instance 'arp-capture
+                     :ethernet-header (read-binary 'ethernet-header buffer-stream)
+                     :arp-header (read-binary 'arp-header buffer-stream)
+                     :capture-metadata (make-instance 'capture-metadata
+                                                      :sec sec
+                                                      :usec usec
+                                                      :caplen caplen
+                                                      :len len)))))
+
 (defun parse-arp (sec usec caplen len buffer)
-  (declare (ignore sec)
-           (ignore usec)
-           (ignore caplen)
-           (ignore len))
   (with-input-from-sequence (stream buffer)
     (let* ((binary-types:*endian* :big-endian)
-           (arp-datagram (read-binary 'arp-packet stream)))
-      (print-arp arp-datagram)
-      (update-entry-table *host-table*
-                          (slot-value arp-datagram 'mac-src)
-                          :ip (slot-value arp-datagram 'sender-ip))
-      (dump-table *host-table* nil))))
+           (arp-datagram (parse-frame sec usec caplen len buffer)))
+      (with-slots (arp-header) arp-datagram
+        (with-slots (mac-src ip-src) arp-header
+          (update-host-table *host-table* mac-src :ip ip-src)
+          (print-arp arp-header))))))
 
-(defun dump-table (table filename)
-  (loop
-     for host being the hash-value of table
-     do (format t "~A ~A~%"
-                (format-mac (slot-value host 'mac))
-                (format-ip (slot-value host 'ip)))))
+(defun dump-table (table)
+  (apply #'concatenate 'string (loop
+                                  for host being the hash-value of table
+                                  collect (format nil "~A ~A ~A~%"
+                                                  (format-mac (host-mac host))
+                                                  (format-ip (host-ip host))
+                                                  (- (get-universal-time) (host-last-activity host))))))
