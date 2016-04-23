@@ -107,3 +107,10 @@
                                                   (format-mac (host-mac host))
                                                   (format-ip (host-ip host))
                                                   (- (get-universal-time) (host-last-activity host))))))
+
+(hunchentoot:define-easy-handler (hosts-handler :uri "/hosts") ()
+  (setf (hunchentoot:content-type*) "text/plain")
+  (dump-table *host-table*))
+
+(defvar *hunchentoot-acceptor* (make-instance 'hunchentoot:easy-acceptor :port 8080))
+(hunchentoot:start *hunchentoot-acceptor*)
