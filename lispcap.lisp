@@ -1,14 +1,6 @@
 (in-package :lispcap)
 
-(defvar binary-types:*endian* :big-endian)
-
-(defclass host ()
-  ((mac :accessor host-mac
-        :initarg :mac)
-   (ip :accessor host-ip
-       :initarg :ip)
-   (last-activity :accessor host-last-activity
-                  :initarg :last-activity)))
+(defvar *host-table* (make-hash-table))
 
 (defun sniff (iface handler)
   (plokami:with-pcap-interface (pcap iface :timeout 0)
@@ -26,9 +18,8 @@
             (print-arp arp-header)))))))
 
 (defun start (iface port)
-  (let ((host-table (make-hash-table)))
-    (rest-service-start host-table port)
-    (sniff iface (parse-arp host-table))))
+  (rest-service-start *host-table* port)
+  (sniff iface (parse-arp *host-table*)))
 
 (defun stop ()
    (rest-service-stop))
