@@ -11,10 +11,10 @@
                                  arp-mac-dst arp-ip-dst)))
 
 (defun make-arp-unicast-query (mac-src ip-src mac-dst ip-dst)
-  (make-ethernet-frame mac-dst mac-src +arp-ethertype+
-                       (make-arp +arp-oper-request+
-                                 mac-src ip-src
-                                 0 ip-dst)))
+  (make-arp-frame mac-dst mac-src +arp-oper-request+ mac-src ip-src 0 ip-dst))
 
 (defun make-arp-broadcast-query (mac-src ip-src ip-dst)
   (make-arp-unicast-query mac-src ip-src +arp-mac-broadcast+ ip-dst))
+
+(defun inject-arp-query (pcap-live query-func host)
+  (plokami:inject pcap-live (funcall query-func host)))

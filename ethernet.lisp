@@ -29,6 +29,6 @@
       payload))
 
 (defun make-ethernet-frame (mac-dst mac-src type payload)
-  (concatenate 'vector
+  (concatenate '(vector (unsigned-byte 8))
                (make-ethernet-header mac-dst mac-src type)
                (pad-ethernet-payload payload)))

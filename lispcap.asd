@@ -11,4 +11,5 @@
                (:file "arp-inject")
                (:file "host-table")
                (:file "rest-service")
+               (:file "query")
                (:file "lispcap")))
